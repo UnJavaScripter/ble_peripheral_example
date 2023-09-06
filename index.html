@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Web Bluetooth Example</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦷</text></svg>">
+  <style>
+
+    main {
+      display: flex;
+    align-items: self-start;
+    justify-content: start;
+    flex-direction: column;
+    }
+    
+
+    form {
+      display: flex;
+      flex-direction: column;
+      margin: 2rem 1rem;
+    }
+
+    .form-row {
+      width: 100%;
+    }
+
+    pre {
+      background: lavender;
+      font-family: monospace;
+      font-size: 0.9rem;
+      padding: 1rem;
+      margin: 1rem;
+      width: -webkit-fill-available
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Web Bluetooth Example</h1>
+  <p>
+    Status: <span id="status">Not connected</span>
+  </p>
+  <main>
+    <form id="connection-form">
+      <div class="form-row">
+        <label for="deviceAddress">BLE Device Address:</label>
+        <input type="text" id="device-address" name="device-address" placeholder="XX:XX:XX:XX:XX:XX" required>
+      </div>
+      <div class="form-row">
+        <label for="service-uuid">Service UUID:</label>
+        <input type="text" id="service-uuid" name="service-uuid" placeholder="54987f4a-6f0f-4e20-b410-9c7ad6768d6b" required>
+      </div>
+      <div class="form-row">
+        <label for="characteristic-uuid">Characteristic UUID:</label>
+        <input type="text" id="characteristic-uuid" name="characteristic-uuid" placeholder="00001234-0000-1000-8000-00805f9b34ff" required>
+      </div>
+      
+      <div class="form-row">
+        <button id="connect-button" type="submit">Connect to Device</button>
+      </div>
+    </form>
+    
+  
+    <form id="writeForm">
+      <div class="form-row">
+        <label for="actionType">Action Type:</label>
+        <select id="actionType">
+          <option value="timer">Timer</option>
+          <option value="countdown">Countdown</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="actionValue">Action Value:</label>
+        <select id="actionValue">
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <button type="submit" id="writeButton">Write Data</button>
+      </div>
+    </form>
+
+    <div class="form-row">
+      <button id="readButton">Read Data</button>
+    </div>
+
+    <pre id="data-log">
+
+    </pre>
+  </main>
+
+  <script>
+class BluetoothDevice {
+      constructor(deviceAddress, service_uuid, characteristic_uuid) {
+        this.deviceAddress = deviceAddress
+        this.service_uuid = service_uuid
+        this.characteristic_uuid = characteristic_uuid
+        this.device = null
+        this.server = null
+        this.characteristic = null
+        this.is_connected = false
+        this.device = undefined
+      }
+
+      async connectToDevice(deviceAddress) {
+        this.deviceAddress = deviceAddress
+
+        try {
+          this.device = await navigator.bluetooth.requestDevice({
+            filters: [{
+              deviceId: this.deviceAddress,
+              services: [this.service_uuid]
+            }],
+          })
+
+          this.server = await this.device.gatt.connect()
+
+          const service = await this.server.getPrimaryService(this.service_uuid)
+          this.characteristic = await service.getCharacteristic(this.characteristic_uuid)
+          this.is_connected = true
+        } catch (err) {
+          this.is_connected = false
+          throw new Error(err)
+        }
+      }
+
+      async readData() {
+        try {
+          if (!this.is_connected) {
+            throw new Error("GATT Server not connected")
+          }
+          console.log("Reading data...")
+          const currentData = await this.characteristic.readValue()
+          const decodedCurrentData = new TextDecoder().decode(currentData)
+          return JSON.parse(decodedCurrentData)
+        } catch (error) {
+          console.error("Error reading data:", error)
+        }
+      }
+
+      async writeData(actionType, actionValue) {
+        try {
+          const messageObj = { action: actionType, value: actionValue }
+          const messageStr = JSON.stringify(messageObj)
+          const data = new TextEncoder().encode(messageStr)
+          await this.characteristic.writeValue(data)
+          console.log("Data sent successfully.", messageStr)
+        } catch (error) {
+          console.error("Error sending data:", error)
+        }
+      }
+    }
+
+    // Connect to the device
+    let BLEDevice = undefined;
+    const connectionFormElem = document.getElementById('connection-form')
+    const connectButton = document.getElementById('connect-button')
+    const statusTextElem = document.getElementById('status')
+    const dataLogElem = document.getElementById('data-log')
+
+    
+    connectionFormElem.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const formData = new FormData(connectionFormElem)
+      const deviceAddress = formData.get("device-address")
+      const serviceUUID = formData.get("service-uuid")
+      const characteristicUUID = formData.get("characteristic-uuid")
+
+      try {
+        BLEDevice = new BluetoothDevice(deviceAddress, serviceUUID, characteristicUUID)
+        await BLEDevice.connectToDevice(deviceAddress)
+        if (BLEDevice.is_connected) {
+          console.log("Connected to device.")
+          statusTextElem.innerText = "Connected!"
+          statusTextElem.style.backgroundColor = "limegreen"
+          clearLog()
+          logData("Connected!")
+        }
+      } catch (err) {
+        console.log(err)
+      }
+    })
+
+    // Read Data Button
+    const readButton = document.getElementById('readButton')
+    readButton.addEventListener('click', async (e) => {
+      e.preventDefault()
+      try {
+        if (BLEDevice.is_connected) {
+          const data = await BLEDevice.readData()
+          console.log(data)
+          logData(data)
+        }
+      } catch (err) {
+        console.log(err)
+      }
+    })
+
+    // Write Data Form
+    const writeForm = document.getElementById('writeForm')
+    const writeButton = document.getElementById('writeButton')
+    const actionTypeSelect = document.getElementById('actionType')
+    const actionValueSelect = document.getElementById('actionValue')
+
+    writeButton.addEventListener('click', async (e) => {
+      e.preventDefault()
+      const selectedActionType = actionTypeSelect.value
+      const selectedActionValue = actionValueSelect.value
+
+      try {
+        if (BLEDevice.is_connected) {
+          await BLEDevice.writeData(selectedActionType, selectedActionValue)
+        }
+      } catch (err) {
+        console.log(err)
+      }
+    })
+
+    function clearLog() {
+      dataLogElem.innerText = ""
+    }
+
+    function logData(data) {
+      dataLogElem.innerText = dataLogElem.innerText + `${1694027136443}: ${JSON.stringify(data)}\n`
+    }
+
+  </script>
+</body>
+
+</html>
